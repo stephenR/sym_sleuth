@@ -184,8 +184,8 @@ class MemoryELF(object):
         raise Exception("ELF start not found!")
 
   @property
-  def dynsym_addr(self):
-    if self._dynsym_addr != None:
+  def dynstr_addr(self):
+    if self._dynstr_addr != None:
       return self._dynstr_addr
 
     dynstr_base = self.base
@@ -221,9 +221,9 @@ class MemoryELF(object):
         check_addr += 1
 
   @property
-  def dynstr_addr(self):
-    if self._dynstr_addr != None:
-      return self._dynstr_addr
+  def dynsym_addr(self):
+    if self._dynsym_addr != None:
+      return self._dynsym_addr
 
 
     SymbolTableEntryClass = SymbolTableEntry64 if self._elf64 else SymbolTableEntry32
@@ -248,7 +248,7 @@ class MemoryELF(object):
             if sym_tbl_off == self._sym_tbl_accept_sz-1:
               return check_addr
       check_addr_coarse += sym_tbl_entry_sz
-    return self._dynstr_addr
+    return self._dynsym_addr
 
 if __name__ == "__main__":
   mem_dump = open("ls.libc.bin", "r").read()
