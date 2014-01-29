@@ -262,9 +262,6 @@ class MemoryELF(object):
       except ReadException, ParseException:
         return
       if not sym_tbl_entry.is_valid():
-        print sym_tbl_addr
-        print sym_tbl_entry
-        print "not valid"
         return
       yield (sym_tbl_entry.value, self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1])
 
