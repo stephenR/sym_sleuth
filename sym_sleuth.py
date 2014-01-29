@@ -2,6 +2,7 @@
 
 import struct
 import string
+import re
 from memoizer import memoize
 
 #TODO Big endian
@@ -271,6 +272,13 @@ class MemoryELF(object):
         return
       yield (sym_tbl_entry.value, self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1])
 
+  def find_symbol(self, name, regex=False):
+    for addr, sym in self.iterate_symbols():
+      if regex and re.match(name, sym) != None:
+          return (addr, sym)
+      elif not regex and name == sym:
+        return (addr, sym)
+
 if __name__ == "__main__":
   mem_dump = open("ls.libc.bin", "r").read()
 
@@ -299,6 +307,13 @@ if __name__ == "__main__":
   print "base: 0x{:x}".format(elf.base)
   print "dynstr: 0x{:x}".format(elf.dynstr_addr)
   print "dynsym: 0x{:x}".format(elf.dynsym_addr)
+
+  print "total_read", total_read
+
+  system_addr, _ =  elf.find_symbol("system")
+  print "system: 0x{:x}".format(system_addr)
+
+  print "total_read", total_read
 
   print "symbols:"
   for addr, name in elf.iterate_symbols():
