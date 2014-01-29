@@ -5,8 +5,6 @@ import string
 import re
 from memoizer import memoize
 
-#TODO Big endian
-
 class ReadException(Exception):
   def __init_(self, msg):
     super(ReadException, self).__init__(msg)
@@ -30,7 +28,6 @@ class MemoizedReader(object):
       ret += next
     return ret
 
-ELF_MAGIC = "\x7fELF"
 #TODO charset could be chosen smaller
 DYNSTR_PRINTABLE = string.printable
 
@@ -153,8 +150,30 @@ class SymbolTableEntry64(SymbolTableEntry):
         return False
     return True
 
+class ELFHeader(object):
+  MAGIC = "\x7fELF"
+
+  def __init__(self, addr, reader):
+    if reader.read(addr, 4) != MAGIC:
+      raise ParseException("Invalid magic bytes.")
+    addr += 4
+
+    elf64 = reader.read(addr, 1)
+    if elf64 not in ["\x1","\x2"]:
+      raise ParseException("Invalid format (32/64).")
+    self.elf64 = elf64 == "\x2"
+    addr += 1
+
+    endianness = reader.read(addr, 1)
+    if endianness not in ["\x1","\x2"]:
+      raise ParseException("Invalid endianness field.")
+    self.le = endianness == "\x1"
+    addr += 1
+    #TODO Big endian
+    assert(self.le == True)
+
 class MemoryELF(object):
-  def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
+  def __init__(self, read_callback, some_addr, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
     self._reader = MemoizedReader(read_callback)
     self._page_sz = page_sz
     self._some_addr = some_addr
@@ -163,10 +182,16 @@ class MemoryELF(object):
     self._dynstr_min_sz = dynstr_min_sz
 
     self._base = None
+    self._header = None
     self._dynstr_addr = None
     self._dynsym_addr = None
 
-    self._elf64 = elf64
+  @property
+  def header(self):
+    if self._header != None:
+      return self._header
+    self._header = ELFHeader(self.base)
+    return self._header
 
   @property
   def base(self):
@@ -180,6 +205,8 @@ class MemoryELF(object):
         page_data = self._reader.read(page_start, len(ELF_MAGIC))
         if page_data == ELF_MAGIC:
           self._base = page_start
+          #do this for a header sanity check as long as big endian is not implemented
+          header = self.header
           return self._base
       except ReadException:
         pass
