@@ -184,25 +184,29 @@ class MemoryELF(object):
     if self._dynstr_addr != None:
       return self._dynstr_addr
 
-    check_addr = self.base
 
     SymbolTableEntryClass = SymbolTableEntry64 if self._elf64 else SymbolTableEntry32
 
     sym_tbl_entry_sz = SymbolTableEntryClass.size()
 
+    check_addr_coarse = self.base + sym_tbl_entry_sz -1
+
     while True:
-      if self._reader.read(check_addr, sym_tbl_entry_sz) == "\x00"*sym_tbl_entry_sz:
-        for sym_tbl_off in range(self._sym_tbl_accept_sz):
-          entry_data = self._reader.read(check_addr+(sym_tbl_off+1)*sym_tbl_entry_sz, sym_tbl_entry_sz)
-          try:
-            sym_tbl_entry = SymbolTableEntryClass(entry_data)
-            if not sym_tbl_entry.is_valid():
+      for check_addr in range(check_addr_coarse, check_addr_coarse-sym_tbl_entry_sz, -1):
+        if self._reader.read(check_addr, 1) != "\x00":
+          break
+        if self._reader.read(check_addr, sym_tbl_entry_sz) == "\x00"*sym_tbl_entry_sz:
+          for sym_tbl_off in range(self._sym_tbl_accept_sz):
+            entry_data = self._reader.read(check_addr+(sym_tbl_off+1)*sym_tbl_entry_sz, sym_tbl_entry_sz)
+            try:
+              sym_tbl_entry = SymbolTableEntryClass(entry_data)
+              if not sym_tbl_entry.is_valid():
+                break
+            except ParseException as e:
               break
-          except ParseException as e:
-            break
-          if sym_tbl_off == self._sym_tbl_accept_sz-1:
-            return check_addr
-      check_addr += 1
+            if sym_tbl_off == self._sym_tbl_accept_sz-1:
+              return check_addr
+      check_addr_coarse += sym_tbl_entry_sz
     return self._dynstr_addr
 
 if __name__ == "__main__":
