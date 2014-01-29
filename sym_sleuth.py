@@ -190,6 +190,9 @@ class MemoryELF(object):
 
     dynstr_base = self.base
 
+    #TODO there is a better approach than a linear search
+    #instead, we can assume a minimal section size and search
+    #with that as jump size instead.
     while True:
       #find first null byte
       if self._reader.read(dynstr_base, 1) != "\x00":
