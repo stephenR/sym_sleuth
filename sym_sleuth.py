@@ -17,7 +17,6 @@ class ParseException(Exception):
 class MemoizedReader(object):
   def __init__(self, read_callback):
     self._read_cb = read_callback
-    self._buf_size = buf_size
   @memoize
   def read(self, offset, count):
     return self._read_cb(offset, count)
@@ -31,6 +30,8 @@ class MemoizedReader(object):
     return ret
 
 ELF_MAGIC = "\x7fELF"
+#TODO charset could be chosen smaller
+DYNSTR_PRINTABLE = string.printable
 
 class ELFSizes(object):
   def __init__(self, elf64):
@@ -152,12 +153,13 @@ class SymbolTableEntry64(SymbolTableEntry):
     return True
 
 class MemoryELF(object):
-  def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10):
+  def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
     self._reader = MemoizedReader(read_callback)
     self._page_sz = page_sz
     self._some_addr = some_addr
     self._sym_tbl_accept_sz = sym_tbl_accept_sz
     self._dynstr_accept_sz = sym_tbl_accept_sz
+    self._dynstr_min_sz = dynstr_min_sz
 
     self._base = None
     self._dynstr_addr = None
@@ -191,10 +193,11 @@ class MemoryELF(object):
 
     dynstr_base = self.base
 
-    #TODO there is a better approach than a linear search
-    #instead, we can assume a minimal section size and search
-    #with that as jump size instead.
     while True:
+      #skip block if there is no valid byte using the minimal size as offset
+      if self._reader.read(dynstr_base+self._dynstr_min_sz, 1) not in DYNSTR_PRINTABLE + "\x00":
+        dynstr_base += self._dynstr_min_sz + 1
+        continue
       #find first null byte
       if self._reader.read(dynstr_base, 1) != "\x00":
         dynstr_base += 1
@@ -205,8 +208,7 @@ class MemoryELF(object):
       check_addr = dynstr_base + 1
       while True:
         next_byte = self._reader.read(check_addr, 1)
-        #TODO charset could be chosen smaller
-        if next_byte in string.printable:
+        if next_byte in DYNSTR_PRINTABLE:
           strlen += 1
         elif next_byte == "\x00":
           if strlen == 0:
