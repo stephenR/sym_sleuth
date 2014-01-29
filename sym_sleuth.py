@@ -250,6 +250,24 @@ class MemoryELF(object):
       check_addr_coarse += sym_tbl_entry_sz
     return self._dynsym_addr
 
+  def iterate_symbols(self):
+    SymbolTableEntryClass = SymbolTableEntry64 if self._elf64 else SymbolTableEntry32
+    sym_tbl_entry_sz = SymbolTableEntryClass.size()
+
+    sym_tbl_addr = self.dynsym_addr
+    while True:
+      sym_tbl_addr += sym_tbl_entry_sz
+      try:
+        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz))
+      except ReadException, ParseException:
+        return
+      if not sym_tbl_entry.is_valid():
+        print sym_tbl_addr
+        print sym_tbl_entry
+        print "not valid"
+        return
+      yield (sym_tbl_entry.value, self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1])
+
 if __name__ == "__main__":
   mem_dump = open("ls.libc.bin", "r").read()
 
@@ -273,3 +291,8 @@ if __name__ == "__main__":
   print "base: 0x{:x}".format(elf.base)
   print "dynstr: 0x{:x}".format(elf.dynstr_addr)
   print "dynsym: 0x{:x}".format(elf.dynsym_addr)
+
+  print "symbols:"
+  for addr, name in elf.iterate_symbols():
+    print "{}: 0x{:x}".format(name, addr)
+
