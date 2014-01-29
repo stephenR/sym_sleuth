@@ -2,6 +2,7 @@
 
 import struct
 import string
+from memoizer import memoize
 
 #TODO Big endian
 
@@ -13,12 +14,12 @@ class ParseException(Exception):
   def __init_(self, msg):
     super(ParseException, self).__init__(msg)
 
-class RandomAccessBufferedReader(object):
-  def __init__(self, read_callback, buf_size = 65536):
+class MemoizedReader(object):
+  def __init__(self, read_callback):
     self._read_cb = read_callback
     self._buf_size = buf_size
+  @memoize
   def read(self, offset, count):
-    #TODO implement
     return self._read_cb(offset, count)
   def read_until(self, offset, c):
     ret = ""
@@ -152,7 +153,7 @@ class SymbolTableEntry64(SymbolTableEntry):
 
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10):
-    self._reader = RandomAccessBufferedReader(read_callback)
+    self._reader = MemoizedReader(read_callback)
     self._page_sz = page_sz
     self._some_addr = some_addr
     self._sym_tbl_accept_sz = sym_tbl_accept_sz
@@ -274,9 +275,13 @@ if __name__ == "__main__":
   FAIL_MIN = 1794047
   FAIL_MAX = FAIL_MIN + 2097151 - 1
 
+  total_read = 0
+
   def read_cb(addr, sz):
     if FAIL_MIN <= addr <= FAIL_MAX or addr >= len(mem_dump):
       raise ReadException("fail")
+
+    global total_read
 
     ret = ""
     while sz > 0:
@@ -285,6 +290,7 @@ if __name__ == "__main__":
       ret += mem_dump[addr]
       addr += 1
       sz -= 1
+    total_read += len(ret)
     return ret
 
   elf = MemoryELF(read_cb, FAIL_MAX + 20)
@@ -295,4 +301,6 @@ if __name__ == "__main__":
   print "symbols:"
   for addr, name in elf.iterate_symbols():
     print "{}: 0x{:x}".format(name, addr)
+
+  print "total_read", total_read
 
