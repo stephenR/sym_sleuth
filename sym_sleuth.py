@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import struct
+import string
 
 #TODO Big endian
 
@@ -142,11 +143,12 @@ class SymbolTableEntry64(SymbolTableEntry):
     return True
 
 class MemoryELF(object):
-  def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10):
+  def __init__(self, read_callback, some_addr, elf64=True, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10):
     self._reader = RandomAccessBufferedReader(read_callback)
     self._page_sz = page_sz
     self._some_addr = some_addr
     self._sym_tbl_accept_sz = sym_tbl_accept_sz
+    self._dynstr_accept_sz = sym_tbl_accept_sz
 
     self._base = None
     self._dynstr_addr = None
@@ -177,7 +179,38 @@ class MemoryELF(object):
   def dynsym_addr(self):
     if self._dynsym_addr != None:
       return self._dynstr_addr
-    return self._dynsym_addr
+
+    dynstr_base = self.base
+
+    while True:
+      #find first null byte
+      if self._reader.read(dynstr_base, 1) != "\x00":
+        dynstr_base += 1
+        continue
+
+      str_cnt = 0
+      strlen = 0
+      check_addr = dynstr_base + 1
+      while True:
+        next_byte = self._reader.read(check_addr, 1)
+        #TODO charset could be chosen smaller
+        if next_byte in string.printable:
+          strlen += 1
+        elif next_byte == "\x00":
+          if strlen == 0:
+            str_cnt = 0
+            dynstr_base = check_addr
+          else:
+            strlen = 0
+            str_cnt += 1
+            if str_cnt == self._dynstr_accept_sz:
+              self._dynstr_addr = dynstr_base
+              return dynstr_base
+        else:
+          #we have to look for the first null byte again
+          dynstr_base = check_addr + 1
+          break
+        check_addr += 1
 
   @property
   def dynstr_addr(self):
@@ -231,4 +264,4 @@ if __name__ == "__main__":
   elf = MemoryELF(read_cb, FAIL_MAX + 20)
   print "base: 0x{:x}".format(elf.base)
   print "dynstr: 0x{:x}".format(elf.dynstr_addr)
-  print "dynsym: {}".format(elf.dynsym_addr)
+  print "dynsym: 0x{:x}".format(elf.dynsym_addr)
