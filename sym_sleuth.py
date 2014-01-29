@@ -20,6 +20,14 @@ class RandomAccessBufferedReader(object):
   def read(self, offset, count):
     #TODO implement
     return self._read_cb(offset, count)
+  def read_until(self, offset, c):
+    ret = ""
+    next = ""
+    while next != c:
+      next = self.read(offset, 1)
+      offset += 1
+      ret += next
+    return ret
 
 ELF_MAGIC = "\x7fELF"
 
