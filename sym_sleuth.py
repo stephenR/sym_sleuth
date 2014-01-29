@@ -93,12 +93,12 @@ class SymbolTableEntry32(SymbolTableEntry):
     #  return False
     if self.size > max_sym_sz:
       return False
-    if self.bind not in [0,1,2,13,14,15]:
-      return False
+    #if self.bind not in [0,1,2,13,14,15]:
+    #  return False
     if self.other != 0:
       return False
-    if self.type not in [0,1,2,3,4,13,14,15]:
-      return False
+    #if self.type not in [0,1,2,3,4,13,14,15]:
+    #  return False
     #TODO check shndx
     return True
 
@@ -138,12 +138,12 @@ class SymbolTableEntry64(SymbolTableEntry):
     #  return False
     if self.size > max_sym_sz:
       return False
-    if self.bind not in [0,1,2,10,11,12,13,14,15]:
-      return False
+    #if self.bind not in [0,1,2,10,11,12,13,14,15]:
+    #  return False
     if self.other != 0:
       return False
-    if self.type not in [0,1,2,3,4,10,11,12,13,14,15]:
-      return False
+    #if self.type not in [0,1,2,3,4,10,11,12,13,14,15]:
+    #  return False
     #TODO check shndx
     if self.type == 4: #STT_FILE
       if self.bind != 0 or self.shndx != 0xfff1: #STB_LOCAL / SHN_ABS
