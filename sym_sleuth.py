@@ -45,10 +45,13 @@ class SymbolTableEntry(object):
 class SymbolTableEntry32(SymbolTableEntry):
   elf_sizes = ELFSizes(elf64=False)
 
-  def __init__(self, data):
+  def __init__(self, data, le=True):
     if len(data) != self.size():
       raise ParseException("Invalid length.")
-    unpack_fmt = "<"
+    if le:
+      unpack_fmt = "<"
+    else:
+      unpack_fmt = ">"
     for sz in self.size_list():
       unpack_fmt += ELFSizes.unpack_fmt(sz)
     self.name, self.value, self.size, self.info, self.other, self.shndx = struct.unpack(unpack_fmt, data)
@@ -90,10 +93,13 @@ class SymbolTableEntry32(SymbolTableEntry):
 class SymbolTableEntry64(SymbolTableEntry):
   elf_sizes = ELFSizes(elf64=True)
 
-  def __init__(self, data):
+  def __init__(self, data, le=True):
     if len(data) != self.size():
       raise ParseException("Invalid length.")
-    unpack_fmt = "<"
+    if le:
+      unpack_fmt = "<"
+    else:
+      unpack_fmt = ">"
     for sz in self.size_list():
       unpack_fmt += ELFSizes.unpack_fmt(sz)
     self.name, self.info, self.other, self.shndx, self.value, self.size = struct.unpack(unpack_fmt, data)
@@ -154,8 +160,6 @@ class ELFHeader(object):
       raise ParseException("Invalid endianness field.")
     self.le = endianness == "\x01"
     addr += 1
-    #TODO Big endian
-    assert(self.le == True)
 
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
@@ -263,7 +267,7 @@ class MemoryELF(object):
           for sym_tbl_off in range(self._sym_tbl_accept_sz):
             entry_data = self._reader.read(check_addr+(sym_tbl_off+1)*sym_tbl_entry_sz, sym_tbl_entry_sz)
             try:
-              sym_tbl_entry = SymbolTableEntryClass(entry_data)
+              sym_tbl_entry = SymbolTableEntryClass(entry_data, self.header.le)
               if not sym_tbl_entry.is_valid():
                 break
             except ParseException as e:
@@ -281,7 +285,7 @@ class MemoryELF(object):
     while True:
       sym_tbl_addr += sym_tbl_entry_sz
       try:
-        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz))
+        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz, self.header.le))
       except ReadException, ParseException:
         return
       if not sym_tbl_entry.is_valid():
