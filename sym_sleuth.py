@@ -3,30 +3,15 @@
 import struct
 import string
 import re
-from memoizer import memoize
-
-class ReadException(Exception):
-  def __init_(self, msg):
-    super(ReadException, self).__init__(msg)
+from reader import Reader, ArrayBufferedReader
 
 class ParseException(Exception):
   def __init_(self, msg):
     super(ParseException, self).__init__(msg)
 
-class MemoizedReader(object):
-  def __init__(self, read_callback):
-    self._read_cb = read_callback
-  @memoize
-  def read(self, offset, count):
-    return self._read_cb(offset, count)
-  def read_until(self, offset, c):
-    ret = ""
-    next = ""
-    while next != c:
-      next = self.read(offset, 1)
-      offset += 1
-      ret += next
-    return ret
+class ReadException(Exception):
+  def __init_(self, msg):
+    super(ReadException, self).__init__(msg)
 
 #TODO charset could be chosen smaller
 DYNSTR_PRINTABLE = string.printable
@@ -154,27 +139,29 @@ class ELFHeader(object):
   MAGIC = "\x7fELF"
 
   def __init__(self, addr, reader):
-    if reader.read(addr, 4) != MAGIC:
+    if reader.read(addr, 4) != self.MAGIC:
       raise ParseException("Invalid magic bytes.")
     addr += 4
 
     elf64 = reader.read(addr, 1)
-    if elf64 not in ["\x1","\x2"]:
+    if elf64 not in ["\x01","\x02"]:
       raise ParseException("Invalid format (32/64).")
-    self.elf64 = elf64 == "\x2"
+    self.elf64 = elf64 == "\x02"
     addr += 1
 
     endianness = reader.read(addr, 1)
-    if endianness not in ["\x1","\x2"]:
+    if endianness not in ["\x01","\x02"]:
       raise ParseException("Invalid endianness field.")
-    self.le = endianness == "\x1"
+    self.le = endianness == "\x01"
     addr += 1
     #TODO Big endian
     assert(self.le == True)
 
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
-    self._reader = MemoizedReader(read_callback)
+    self._reader = Reader(read_callback)
+    #store the callback to switch readers later
+    self._read_cb = read_callback
     self._page_sz = page_sz
     self._some_addr = some_addr
     self._sym_tbl_accept_sz = sym_tbl_accept_sz
@@ -190,7 +177,7 @@ class MemoryELF(object):
   def header(self):
     if self._header != None:
       return self._header
-    self._header = ELFHeader(self.base)
+    self._header = ELFHeader(self.base, self._reader)
     return self._header
 
   @property
@@ -202,11 +189,13 @@ class MemoryELF(object):
 
     while True:
       try:
-        page_data = self._reader.read(page_start, len(ELF_MAGIC))
-        if page_data == ELF_MAGIC:
+        page_data = self._reader.read(page_start, len(ELFHeader.MAGIC))
+        if page_data == ELFHeader.MAGIC:
           self._base = page_start
           #do this for a header sanity check as long as big endian is not implemented
           header = self.header
+          #switch to a more efficient reader implementation
+          self._reader = ArrayBufferedReader(self._read_cb, self._base)
           return self._base
       except ReadException:
         pass
@@ -260,7 +249,7 @@ class MemoryELF(object):
       return self._dynsym_addr
 
 
-    SymbolTableEntryClass = SymbolTableEntry64 if self._elf64 else SymbolTableEntry32
+    SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
 
     sym_tbl_entry_sz = SymbolTableEntryClass.size()
 
@@ -285,7 +274,7 @@ class MemoryELF(object):
     return self._dynsym_addr
 
   def iterate_symbols(self):
-    SymbolTableEntryClass = SymbolTableEntry64 if self._elf64 else SymbolTableEntry32
+    SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
     sym_tbl_entry_sz = SymbolTableEntryClass.size()
 
     sym_tbl_addr = self.dynsym_addr
