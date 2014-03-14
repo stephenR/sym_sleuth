@@ -285,7 +285,7 @@ class MemoryELF(object):
     while True:
       sym_tbl_addr += sym_tbl_entry_sz
       try:
-        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz, self.header.le))
+        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz), self.header.le)
       except ReadException, ParseException:
         return
       if not sym_tbl_entry.is_valid():
