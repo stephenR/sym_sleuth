@@ -27,16 +27,22 @@ class ELFSizes(object):
       self.addr_sz=4
 
   @staticmethod
-  def unpack_fmt(sz):
-    if sz == 8:
-      return "Q"
-    if sz == 4:
-      return "I"
-    if sz == 2:
-      return "H"
-    if sz == 1:
-      return "B"
-    assert False
+  def unpack_fmt(le, sizes):
+    ret = "<" if le else ">"
+    if not type(sizes) == type([]):
+      sizes = [sizes]
+    for sz in sizes:
+      if sz == 8:
+        ret += "Q"
+      elif sz == 4:
+        ret += "I"
+      elif sz == 2:
+        ret += "H"
+      elif sz == 1:
+        ret += "B"
+      else:
+        assert False
+    return ret
 
 class SymbolTableEntry(object):
   def __str__(self):
@@ -48,12 +54,7 @@ class SymbolTableEntry32(SymbolTableEntry):
   def __init__(self, data, le=True):
     if len(data) != self.size():
       raise ParseException("Invalid length.")
-    if le:
-      unpack_fmt = "<"
-    else:
-      unpack_fmt = ">"
-    for sz in self.size_list():
-      unpack_fmt += ELFSizes.unpack_fmt(sz)
+    unpack_fmt = ELFSizes.unpack_fmt(le, self.size_list())
     self.name, self.value, self.size, self.info, self.other, self.shndx = struct.unpack(unpack_fmt, data)
     self.bind = self.info >> 4
     self.type = self.info & 0xf
@@ -96,12 +97,7 @@ class SymbolTableEntry64(SymbolTableEntry):
   def __init__(self, data, le=True):
     if len(data) != self.size():
       raise ParseException("Invalid length.")
-    if le:
-      unpack_fmt = "<"
-    else:
-      unpack_fmt = ">"
-    for sz in self.size_list():
-      unpack_fmt += ELFSizes.unpack_fmt(sz)
+    unpack_fmt = ELFSizes.unpack_fmt(le, self.size_list())
     self.name, self.info, self.other, self.shndx, self.value, self.size = struct.unpack(unpack_fmt, data)
     self.bind = self.info >> 4
     self.type = self.info & 0xf
