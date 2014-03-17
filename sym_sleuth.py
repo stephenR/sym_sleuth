@@ -160,17 +160,17 @@ class ELFHeader(object):
     #skip until entry point
     addr += 18
 
-    sz = ELFSizes(self.elf64)
+    self.sizes = ELFSizes(self.elf64)
 
     #skip entry point
-    addr += sz.addr_sz
+    addr += self.sizes.addr_sz
 
-    prog_hdr_off = reader.read(addr, sz.addr_sz)
-    self.prog_hdr_off = struct.unpack(ELFSizes.unpack_fmt(self.le, sz.addr_sz), prog_hdr_off)[0]
-    addr += sz.addr_sz
+    prog_hdr_off = reader.read(addr, self.sizes.addr_sz)
+    self.prog_hdr_off = struct.unpack(ELFSizes.unpack_fmt(self.le, self.sizes.addr_sz), prog_hdr_off)[0]
+    addr += self.sizes.addr_sz
 
     #skip section header offset
-    addr += sz.addr_sz
+    addr += self.sizes.addr_sz
 
     #skip flags
     addr += 4
@@ -180,27 +180,66 @@ class ELFHeader(object):
 
     prog_hdr_sz = reader.read(addr, 2)
     self.prog_hdr_sz = struct.unpack(ELFSizes.unpack_fmt(self.le, 2), prog_hdr_sz)[0]
+    assert self.prog_hdr_sz == 2*4 + 6*self.sizes.addr_sz
     addr += 2
 
     prog_hdr_cnt = reader.read(addr, 2)
     self.prog_hdr_cnt = struct.unpack(ELFSizes.unpack_fmt(self.le, 2), prog_hdr_cnt)[0]
     addr += 2
 
+class ProgramHeader(object):
+  LOAD = 1
+  DYNAMIC = 2
+  def __init__(self, addr, elf_header, reader):
+    if elf_header.elf64:
+      off_off = 8
+      vaddr_off = 16
+      f_sz_off = 32
+    else:
+      off_off = 4
+      vaddr_off = 8
+      f_sz_off = 16
+
+    addr_sz = elf_header.sizes.addr_sz
+
+    type = reader.read(addr, 4)
+    self.type = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, 4), type)[0]
+
+    offset = reader.read(addr+off_off, addr_sz)
+    self.offset = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), offset)[0]
+
+    vaddr = reader.read(addr+vaddr_off, addr_sz)
+    self.vaddr = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), vaddr)[0]
+
+    f_size = reader.read(addr+f_sz_off, addr_sz)
+    self.f_size = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), f_size)[0]
+
+class DynamicEntry(object):
+  HASH = 4
+  STRTAB = 5
+  SYMTAB = 6
+  def __init__(self, addr, elf_header, reader):
+    addr_sz = elf_header.sizes.addr_sz
+    self.size = 2*addr_sz
+    tag = reader.read(addr, addr_sz)
+    self.tag = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), tag)[0]
+    val = reader.read(addr+addr_sz, addr_sz)
+    self.val = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), val)[0]
+
 class MemoryELF(object):
-  def __init__(self, read_callback, some_addr, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
+  def __init__(self, read_callback, some_addr, page_sz=4096):
     self._reader = Reader(read_callback)
     #store the callback to switch readers later
     self._read_cb = read_callback
     self._page_sz = page_sz
     self._some_addr = some_addr
-    self._sym_tbl_accept_sz = sym_tbl_accept_sz
-    self._dynstr_accept_sz = sym_tbl_accept_sz
-    self._dynstr_min_sz = dynstr_min_sz
 
     self._base = None
     self._header = None
     self._dynstr_addr = None
     self._dynsym_addr = None
+    self._dynamic_sec_addr = None
+    self._base_vaddr = None
 
   @property
   def header(self):
@@ -232,75 +271,90 @@ class MemoryELF(object):
       if page_start < 0:
         raise Exception("ELF start not found!")
 
+  def _parse_dynamic_section(self):
+    addr = self.dynamic_sec_addr
+    while True:
+      entry = DynamicEntry(addr, self.header, self._reader)
+      addr += entry.size
+      if entry.tag == 0:
+        break
+      elif entry.tag == DynamicEntry.HASH:
+        self._hash_addr = self.base + entry.val - self.base_vaddr
+      elif entry.tag == DynamicEntry.STRTAB:
+        self._dynstr_addr = self.base + entry.val - self.base_vaddr
+      elif entry.tag == DynamicEntry.SYMTAB:
+        self._dynsym_addr = self.base + entry.val - self.base_vaddr
+
+  @property
+  def dynamic_sec_addr(self):
+    if self._dynamic_sec_addr != None:
+      return self._dynamic_sec_addr
+
+    self._parse_program_headers()
+
+    assert self._dynamic_sec_addr != None
+    return self._dynamic_sec_addr
+
+  @property
+  def base_vaddr(self):
+    if self._base_vaddr != None:
+      return self._base_vaddr
+
+    self._parse_program_headers()
+
+    assert self._base_vaddr != None
+    return self._base_vaddr
+
+  def _parse_program_headers(self):
+    load_segments = []
+    dynamic = None
+    for i in range(self.header.prog_hdr_cnt):
+      prog_hdr_addr = self.base + self.header.prog_hdr_off + i*self.header.prog_hdr_sz
+      hdr = ProgramHeader(prog_hdr_addr, self.header, self._reader)
+      if hdr.type == ProgramHeader.LOAD:
+        if hdr.offset == 0:
+          self._base_vaddr = hdr.vaddr
+        else:
+          load_segments.append(hdr)
+      elif hdr.type == ProgramHeader.DYNAMIC:
+        dynamic = hdr
+
+    for segment in load_segments:
+      if segment.offset <= dynamic.offset < segment.offset + segment.f_size:
+        self._dynamic_sec_addr = self.base + (segment.vaddr - self._base_vaddr) + (dynamic.offset - segment.offset)
+        return self._dynamic_sec_addr
+
+    assert False
+
   @property
   def dynstr_addr(self):
     if self._dynstr_addr != None:
       return self._dynstr_addr
 
-    dynstr_base = self.base
+    self._parse_dynamic_section()
 
-    while True:
-      #skip block if there is no valid byte using the minimal size as offset
-      if self._reader.read(dynstr_base+self._dynstr_min_sz, 1) not in DYNSTR_PRINTABLE + "\x00":
-        dynstr_base += self._dynstr_min_sz + 1
-        continue
-      #find first null byte
-      if self._reader.read(dynstr_base, 1) != "\x00":
-        dynstr_base += 1
-        continue
-
-      str_cnt = 0
-      strlen = 0
-      check_addr = dynstr_base + 1
-      while True:
-        next_byte = self._reader.read(check_addr, 1)
-        if next_byte in DYNSTR_PRINTABLE:
-          strlen += 1
-        elif next_byte == "\x00":
-          if strlen == 0:
-            str_cnt = 0
-            dynstr_base = check_addr
-          else:
-            strlen = 0
-            str_cnt += 1
-            if str_cnt == self._dynstr_accept_sz:
-              self._dynstr_addr = dynstr_base
-              return dynstr_base
-        else:
-          #we have to look for the first null byte again
-          dynstr_base = check_addr + 1
-          break
-        check_addr += 1
+    assert self._dynstr_addr != None
+    return self._dynstr_addr
 
   @property
   def dynsym_addr(self):
     if self._dynsym_addr != None:
       return self._dynsym_addr
 
+    self._parse_dynamic_section()
 
-    SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
-
-    sym_tbl_entry_sz = SymbolTableEntryClass.size()
-
-    check_addr_coarse = self.base + sym_tbl_entry_sz -1
-
-    while True:
-      for check_addr in range(check_addr_coarse, check_addr_coarse-sym_tbl_entry_sz, -1):
-        if self._reader.read(check_addr, 1) != "\x00":
-          break
-        if self._reader.read(check_addr, sym_tbl_entry_sz) == "\x00"*sym_tbl_entry_sz:
-          for sym_tbl_off in range(self._sym_tbl_accept_sz):
-            entry_data = self._reader.read(check_addr+(sym_tbl_off+1)*sym_tbl_entry_sz, sym_tbl_entry_sz)
-            try:
-              sym_tbl_entry = SymbolTableEntryClass(entry_data, self.header.le)
-              if not sym_tbl_entry.is_valid():
-                break
-            except ParseException as e:
-              break
-            if sym_tbl_off == self._sym_tbl_accept_sz-1:
-              return check_addr
-      check_addr_coarse += sym_tbl_entry_sz
+    assert self._dynsym_addr != None
     return self._dynsym_addr
+
+  @property
+  def hash_addr(self):
+    if self._hash_addr != None:
+      return self._hash_addr
+
+    self._parse_dynamic_section()
+
+    assert self._hash_addr != None
+    return self._hash_addr
 
   def iterate_symbols(self):
     SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
