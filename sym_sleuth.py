@@ -157,6 +157,35 @@ class ELFHeader(object):
     self.le = endianness == "\x01"
     addr += 1
 
+    #skip until entry point
+    addr += 18
+
+    sz = ELFSizes(self.elf64)
+
+    #skip entry point
+    addr += sz.addr_sz
+
+    prog_hdr_off = reader.read(addr, sz.addr_sz)
+    self.prog_hdr_off = struct.unpack(ELFSizes.unpack_fmt(self.le, sz.addr_sz), prog_hdr_off)[0]
+    addr += sz.addr_sz
+
+    #skip section header offset
+    addr += sz.addr_sz
+
+    #skip flags
+    addr += 4
+
+    #skip elf header size
+    addr += 2
+
+    prog_hdr_sz = reader.read(addr, 2)
+    self.prog_hdr_sz = struct.unpack(ELFSizes.unpack_fmt(self.le, 2), prog_hdr_sz)[0]
+    addr += 2
+
+    prog_hdr_cnt = reader.read(addr, 2)
+    self.prog_hdr_cnt = struct.unpack(ELFSizes.unpack_fmt(self.le, 2), prog_hdr_cnt)[0]
+    addr += 2
+
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096, sym_tbl_accept_sz=10, dynstr_accept_sz=10, dynstr_min_sz=256):
     self._reader = Reader(read_callback)
