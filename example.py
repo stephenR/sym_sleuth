@@ -42,11 +42,5 @@ if __name__ == "__main__":
   system_addr =  elf.find_symbol("system")
   print "system: 0x{:x}".format(system_addr)
 
-  #print "total_read", total_read
-
-  #print "symbols:"
-  #for addr, name in elf.iterate_symbols():
-  #  print "{}: 0x{:x}".format(name, addr)
-
   print "total_read", total_read
 

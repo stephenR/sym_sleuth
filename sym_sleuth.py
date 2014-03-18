@@ -13,9 +13,6 @@ class ReadException(Exception):
   def __init_(self, msg):
     super(ReadException, self).__init__(msg)
 
-#TODO charset could be chosen smaller
-DYNSTR_PRINTABLE = string.printable
-
 class ELFSizes(object):
   def __init__(self, elf64):
     self.half_sz=2
@@ -75,22 +72,6 @@ class SymbolTableEntry32(SymbolTableEntry):
   def size():
     return sum(SymbolTableEntry32.size_list())
 
-  def is_valid(self, max_symstr_sz=2**16, max_sym_sz=2**16):
-    if self.name > max_symstr_sz:
-      return False
-    #if self.value == 0:
-    #  return False
-    if self.size > max_sym_sz:
-      return False
-    #if self.bind not in [0,1,2,13,14,15]:
-    #  return False
-    if self.other != 0:
-      return False
-    #if self.type not in [0,1,2,3,4,13,14,15]:
-    #  return False
-    #TODO check shndx
-    return True
-
 class SymbolTableEntry64(SymbolTableEntry):
   elf_sizes = ELFSizes(elf64=True)
 
@@ -117,25 +98,6 @@ class SymbolTableEntry64(SymbolTableEntry):
   @staticmethod
   def size():
     return sum(SymbolTableEntry64.size_list())
-
-  def is_valid(self, max_symstr_sz=2**16, max_sym_sz=2**16):
-    if self.name > max_symstr_sz:
-      return False
-    #if self.value == 0:
-    #  return False
-    if self.size > max_sym_sz:
-      return False
-    #if self.bind not in [0,1,2,10,11,12,13,14,15]:
-    #  return False
-    if self.other != 0:
-      return False
-    #if self.type not in [0,1,2,3,4,10,11,12,13,14,15]:
-    #  return False
-    #TODO check shndx
-    if self.type == 4: #STT_FILE
-      if self.bind != 0 or self.shndx != 0xfff1: #STB_LOCAL / SHN_ABS
-        return False
-    return True
 
 class ELFHeader(object):
   MAGIC = "\x7fELF"
@@ -354,21 +316,6 @@ class MemoryELF(object):
 
     assert self._hash_addr != None
     return self._hash_addr
-
-  def iterate_symbols(self):
-    SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
-    sym_tbl_entry_sz = SymbolTableEntryClass.size()
-
-    sym_tbl_addr = self.dynsym_addr
-    while True:
-      sym_tbl_addr += sym_tbl_entry_sz
-      try:
-        sym_tbl_entry = SymbolTableEntryClass(self._reader.read(sym_tbl_addr, sym_tbl_entry_sz), self.header.le)
-      except ReadException, ParseException:
-        return
-      if not sym_tbl_entry.is_valid():
-        return
-      yield (sym_tbl_entry.value, self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1])
 
   def _iterate_hashes(self, hash):
     nbucket, nchain = self._read_values(self.hash_addr, [(0,4), (4,4)])
