@@ -190,41 +190,31 @@ class ELFHeader(object):
 class ProgramHeader(object):
   LOAD = 1
   DYNAMIC = 2
-  def __init__(self, addr, elf_header, reader):
-    if elf_header.elf64:
-      off_off = 8
-      vaddr_off = 16
-      f_sz_off = 32
-    else:
-      off_off = 4
-      vaddr_off = 8
-      f_sz_off = 16
 
-    addr_sz = elf_header.sizes.addr_sz
+class ProgramHeader32(ProgramHeader):
+  def __init__(self, reader):
+    self.type, self.offset, self.vaddr, self.f_size = reader([(0,4),(4,4),(8,4),(16,4)])
 
-    type = reader.read(addr, 4)
-    self.type = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, 4), type)[0]
-
-    offset = reader.read(addr+off_off, addr_sz)
-    self.offset = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), offset)[0]
-
-    vaddr = reader.read(addr+vaddr_off, addr_sz)
-    self.vaddr = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), vaddr)[0]
-
-    f_size = reader.read(addr+f_sz_off, addr_sz)
-    self.f_size = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), f_size)[0]
+class ProgramHeader64(ProgramHeader):
+  def __init__(self, reader):
+    self.type, self.offset, self.vaddr, self.f_size = reader([(0,4),(8,8),(16,8),(32,8)])
 
 class DynamicEntry(object):
   HASH = 4
   STRTAB = 5
   SYMTAB = 6
-  def __init__(self, addr, elf_header, reader):
-    addr_sz = elf_header.sizes.addr_sz
+
+class DynamicEntry32(DynamicEntry):
+  def __init__(self, reader):
+    addr_sz = ELFSizes(False).addr_sz
     self.size = 2*addr_sz
-    tag = reader.read(addr, addr_sz)
-    self.tag = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), tag)[0]
-    val = reader.read(addr+addr_sz, addr_sz)
-    self.val = struct.unpack(elf_header.sizes.unpack_fmt(elf_header.le, addr_sz), val)[0]
+    self.tag, self.val = reader([(0, addr_sz), (addr_sz, addr_sz)])
+
+class DynamicEntry64(DynamicEntry):
+  def __init__(self, reader):
+    addr_sz = ELFSizes(True).addr_sz
+    self.size = 2*addr_sz
+    self.tag, self.val = reader([(0, addr_sz), (addr_sz, addr_sz)])
 
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096):
@@ -240,6 +230,13 @@ class MemoryELF(object):
     self._dynsym_addr = None
     self._dynamic_sec_addr = None
     self._base_vaddr = None
+
+  def _read_values(self, addr, offsets):
+    ret = []
+    for offset in offsets:
+      read = self._reader.read(addr+offset[0], offset[1])
+      ret.append(struct.unpack(self.header.sizes.unpack_fmt(self.header.le, offset[1]), read)[0])
+    return ret
 
   @property
   def header(self):
@@ -272,9 +269,10 @@ class MemoryELF(object):
         raise Exception("ELF start not found!")
 
   def _parse_dynamic_section(self):
+    DynamicEntryClass = DynamicEntry64 if self.header.elf64 else DynamicEntry32
     addr = self.dynamic_sec_addr
     while True:
-      entry = DynamicEntry(addr, self.header, self._reader)
+      entry = DynamicEntryClass(lambda x: self._read_values(addr, x))
       addr += entry.size
       if entry.tag == 0:
         break
@@ -306,11 +304,12 @@ class MemoryELF(object):
     return self._base_vaddr
 
   def _parse_program_headers(self):
+    ProgramHeaderClass = ProgramHeader64 if self.header.elf64 else ProgramHeader32
     load_segments = []
     dynamic = None
     for i in range(self.header.prog_hdr_cnt):
       prog_hdr_addr = self.base + self.header.prog_hdr_off + i*self.header.prog_hdr_sz
-      hdr = ProgramHeader(prog_hdr_addr, self.header, self._reader)
+      hdr = ProgramHeaderClass(lambda x: self._read_values(prog_hdr_addr, x))
       if hdr.type == ProgramHeader.LOAD:
         if hdr.offset == 0:
           self._base_vaddr = hdr.vaddr
@@ -371,10 +370,33 @@ class MemoryELF(object):
         return
       yield (sym_tbl_entry.value, self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1])
 
-  def find_symbol(self, name, regex=False):
-    for addr, sym in self.iterate_symbols():
-      if regex and re.match(name, sym) != None:
-          return (addr, sym)
-      elif not regex and name == sym:
-        return (addr, sym)
+  def _iterate_hashes(self, hash):
+    nbucket, nchain = self._read_values(self.hash_addr, [(0,4), (4,4)])
+    bucket_addr = self.hash_addr + 2*4
+    chain_addr = bucket_addr + nbucket*4
+
+    bucket_index = hash%nbucket
+    index = self._read_values(bucket_addr+bucket_index*4, [(0,4)])[0]
+    while index != 0:
+      yield index
+      index = self._read_values(chain_addr+index*4, [(0,4)])[0]
+
+  def find_symbol(self, name):
+    SymbolTableEntryClass = SymbolTableEntry64 if self.header.elf64 else SymbolTableEntry32
+    sym_tbl_entry_sz = SymbolTableEntryClass.size()
+    def elf_hash(name):
+        h = 0
+        for c in name:
+          h = ((h << 4) + ord(c)) % 2**32;
+          g = h & 0xf0000000
+          if g != 0:
+            h ^= g >> 24
+          h &= (~g) % 2**32
+        return h
+    for i in self._iterate_hashes(elf_hash(name)):
+      sym_tbl_entry = SymbolTableEntryClass(self._reader.read(self.dynsym_addr+i*sym_tbl_entry_sz, sym_tbl_entry_sz), self.header.le)
+      sym_name = self._reader.read_until(self.dynstr_addr+sym_tbl_entry.name, "\x00")[:-1]
+      if sym_name == name:
+        return sym_tbl_entry.value
+    assert False
 

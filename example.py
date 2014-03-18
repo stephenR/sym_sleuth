@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
   print "total_read", total_read
 
-  system_addr, _ =  elf.find_symbol("system")
+  system_addr =  elf.find_symbol("system")
   print "system: 0x{:x}".format(system_addr)
 
   #print "total_read", total_read
