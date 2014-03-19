@@ -192,8 +192,8 @@ class MemoryELF(object):
       ret.append(struct.unpack(self.header.sizes.unpack_fmt(self.header.le, offset[1]), read)[0])
     return ret
 
-  def _find_base(self, some_addr, page_sz)
-    page_start = self._some_addr - (self._some_addr % self._page_sz)
+  def _find_base(self, some_addr, page_sz):
+    page_start = some_addr - (some_addr % page_sz)
 
     while page_start >= 0:
       try:
@@ -202,7 +202,7 @@ class MemoryELF(object):
         return
       except (ReadException, ParseException):
         pass
-      page_start -= self._page_sz
+      page_start -= page_sz
 
     raise Exception("ELF start not found!")
 
