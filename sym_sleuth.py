@@ -3,15 +3,11 @@
 import struct
 import string
 import re
-from reader import Reader
+from reader import Reader, ReadException
 
 class ParseException(Exception):
   def __init_(self, msg):
     super(ParseException, self).__init__(msg)
-
-class ReadException(Exception):
-  def __init_(self, msg):
-    super(ReadException, self).__init__(msg)
 
 class ELFSizes(object):
   def __init__(self, elf64):
