@@ -177,11 +177,11 @@ class DynamicEntry64(DynamicEntry):
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096):
     self._reader = Reader(read_callback)
-    self._page_sz = page_sz
     self._some_addr = some_addr
 
-    self._base = None
-    self._header = None
+    #set self.base and self.header
+    self._find_base(some_addr, page_sz)
+
     self._dynstr_addr = None
     self._dynsym_addr = None
     self._dynamic_sec_addr = None
@@ -194,23 +194,19 @@ class MemoryELF(object):
       ret.append(struct.unpack(self.header.sizes.unpack_fmt(self.header.le, offset[1]), read)[0])
     return ret
 
-  @property
-  def base(self):
-    if self._base != None:
-      return self._base
-
+  def _find_base(self, some_addr, page_sz)
     page_start = self._some_addr - (self._some_addr % self._page_sz)
 
-    while True:
+    while page_start >= 0:
       try:
         self.header = ELFHeader(page_start, self._reader)
-        self._base = page_start
-        return self._base
+        self.base = page_start
+        return
       except (ReadException, ParseException):
         pass
       page_start -= self._page_sz
-      if page_start < 0:
-        raise Exception("ELF start not found!")
+
+    raise Exception("ELF start not found!")
 
   def _parse_dynamic_section(self):
     DynamicEntryClass = DynamicEntry64 if self.header.elf64 else DynamicEntry32
