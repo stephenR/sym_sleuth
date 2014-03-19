@@ -7,14 +7,16 @@ class ReadException(Exception):
 class Reader(object):
   def __init__(self, read_callback):
     self._read_cb = read_callback
-  def read(self, offset, count):
-    return self._read_cb(offset, count)
-  def read_until(self, offset, c):
+  def read(self, addr, count):
+    return self._read_cb(addr, count)
+  def read_until(self, addr, c):
     ret = ""
     next = ""
     while next != c:
-      next = self.read(offset, 1)
-      offset += 1
+      next = self.read(addr, 1)
+      addr += 1
       ret += next
     return ret
+  def equal(self, addr, s):
+    return self.read(addr, len(s)) == s
 
