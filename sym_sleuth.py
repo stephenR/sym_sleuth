@@ -177,8 +177,6 @@ class DynamicEntry64(DynamicEntry):
 class MemoryELF(object):
   def __init__(self, read_callback, some_addr, page_sz=4096):
     self._reader = Reader(read_callback)
-    #store the callback to switch readers later
-    self._read_cb = read_callback
     self._page_sz = page_sz
     self._some_addr = some_addr
 
