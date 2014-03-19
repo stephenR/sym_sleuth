@@ -201,13 +201,6 @@ class MemoryELF(object):
     return ret
 
   @property
-  def header(self):
-    if self._header != None:
-      return self._header
-    self._header = ELFHeader(self.base, self._reader)
-    return self._header
-
-  @property
   def base(self):
     if self._base != None:
       return self._base
@@ -216,15 +209,11 @@ class MemoryELF(object):
 
     while True:
       try:
-        page_data = self._reader.read(page_start, len(ELFHeader.MAGIC))
-        if page_data == ELFHeader.MAGIC:
-          self._base = page_start
-          #do this for a header sanity check as long as big endian is not implemented
-          header = self.header
-          #switch to a more efficient reader implementation
-          self._reader = ArrayBufferedReader(self._read_cb, self._base)
-          return self._base
-      except ReadException:
+        self.header = ELFHeader(page_start, self._reader)
+        self._base = page_start
+        self._reader = ArrayBufferedReader(self._read_cb, self._base)
+        return self._base
+      except (ReadException, ParseException):
         pass
       page_start -= self._page_sz
       if page_start < 0:
