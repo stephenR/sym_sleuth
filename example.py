@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from sym_sleuth import MemoryELF, ReadException
+from reader import Reader
 
 if __name__ == "__main__":
   mem_areas = [open("libc.mem{}".format(i), "r").read() for i in range(1,4)]
@@ -32,7 +33,7 @@ if __name__ == "__main__":
     total_read += len(ret)
     return ret
 
-  elf = MemoryELF(read_cb, 0x38dbfba000 + 20)
+  elf = MemoryELF(Reader(read_cb), 0x38dbfba000 + 20)
   print "base: 0x{:x}".format(elf.base)
   print "dynstr: 0x{:x}".format(elf.dynstr_addr)
   print "dynsym: 0x{:x}".format(elf.dynsym_addr)

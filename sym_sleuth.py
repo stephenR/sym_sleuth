@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import struct
-from reader import Reader, ReadException
+from reader import ReadException
 
 class ParseException(Exception):
   def __init_(self, msg):
@@ -173,8 +173,8 @@ class DynamicEntry64(DynamicEntry):
     self.tag, self.val = reader([(0, addr_sz), (addr_sz, addr_sz)])
 
 class MemoryELF(object):
-  def __init__(self, read_callback, some_addr, page_sz=4096):
-    self._reader = Reader(read_callback)
+  def __init__(self, reader, some_addr, page_sz=4096):
+    self._reader = reader
     self._some_addr = some_addr
 
     #set self.base and self.header
