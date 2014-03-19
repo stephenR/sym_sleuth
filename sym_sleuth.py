@@ -3,7 +3,7 @@
 import struct
 import string
 import re
-from reader import Reader, ArrayBufferedReader
+from reader import Reader
 
 class ParseException(Exception):
   def __init_(self, msg):
@@ -211,7 +211,6 @@ class MemoryELF(object):
       try:
         self.header = ELFHeader(page_start, self._reader)
         self._base = page_start
-        self._reader = ArrayBufferedReader(self._read_cb, self._base)
         return self._base
       except (ReadException, ParseException):
         pass
