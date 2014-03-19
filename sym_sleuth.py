@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 import struct
-import string
-import re
 from reader import Reader, ReadException
 
 class ParseException(Exception):
